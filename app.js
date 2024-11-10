@@ -12,35 +12,13 @@ const openai = new OpenAI({
   baseURL: 'https://integrate.api.nvidia.com/v1',
 });
 
-// Helper function for streaming response
-const streamToResponse = (stream, res) => {
-  stream.on('data', (chunk) => {
-    const content = chunk.choices[0]?.delta?.content || '';
-    if (content) {
-      res.write(content);
-    }
-  });
-
-  stream.on('end', () => {
-    res.end();
-  });
-
-  stream.on('error', (error) => {
-    console.error('Stream error:', error);
-    res.status(500).end();
-  });
-};
-
-// Main API endpoint for processing messages
 app.post('/api/chat', async (req, res) => {
   try {
     const { message } = req.body;
-
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Set headers for streaming response
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Transfer-Encoding', 'chunked');
 
@@ -53,12 +31,23 @@ app.post('/api/chat', async (req, res) => {
       stream: true
     });
 
-    streamToResponse(completion, res);
+    for await (const chunk of completion) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        res.write(content);
+      }
+    }
+    res.end();
 
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('Error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
