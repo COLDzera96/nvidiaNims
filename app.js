@@ -1,3 +1,4 @@
+const express = require('express');
 const OpenAI = require("openai");
 
 const openai = new OpenAI({
@@ -6,7 +7,12 @@ const openai = new OpenAI({
   baseURL: "https://integrate.api.nvidia.com/v1",
 });
 
-async function main(message) {
+const app = express();
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+async function getCompletion(message) {
   const completion = await openai.chat.completions.create({
     model: "meta/llama-3.1-405b-instruct",
     messages: [
@@ -21,9 +27,27 @@ async function main(message) {
     stream: true,
   });
 
+  let result = "";
   for await (const chunk of completion) {
-    process.stdout.write(chunk.choices[0]?.delta?.content || "");
+    result += chunk.choices[0]?.delta?.content || "";
   }
+
+  return result;
 }
-message = "what's chupacabra?";
-main(message);
+
+// POST endpoint to handle incoming messages
+app.post('/message', async (req, res) => {
+  const { message } = req.body; // Get message from request body
+  
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  try {
+    const response = await getCompletion(message); // Get OpenAI completion
+    res.status(200).json({ response }); // Send the OpenAI response back
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+});
