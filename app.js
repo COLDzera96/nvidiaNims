@@ -1,53 +1,64 @@
 const express = require('express');
-const OpenAI = require("openai");
-
-const openai = new OpenAI({
-  apiKey:
-    "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",
-  baseURL: "https://integrate.api.nvidia.com/v1",
-});
+const OpenAI = require('openai');
+const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
-
-// Middleware to parse JSON request bodies
 app.use(express.json());
+app.use(cors());
 
-async function getCompletion(message) {
-  const completion = await openai.chat.completions.create({
-    model: "meta/llama-3.1-405b-instruct",
-    messages: [
-      {
-        role: "user",
-        content: message,
-      },
-    ],
-    temperature: 0.5,
-    top_p: 1,
-    max_tokens: 1024,
-    stream: true,
+const openai = new OpenAI({
+  apiKey: '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',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+});
+
+// Helper function for streaming response
+const streamToResponse = (stream, res) => {
+  stream.on('data', (chunk) => {
+    const content = chunk.choices[0]?.delta?.content || '';
+    if (content) {
+      res.write(content);
+    }
   });
 
-  let result = "";
-  for await (const chunk of completion) {
-    result += chunk.choices[0]?.delta?.content || "";
-  }
+  stream.on('end', () => {
+    res.end();
+  });
 
-  return result;
-}
+  stream.on('error', (error) => {
+    console.error('Stream error:', error);
+    res.status(500).end();
+  });
+};
 
-// POST endpoint to handle incoming messages
-app.post('/message', async (req, res) => {
-  const { message } = req.body; // Get message from request body
-  
-  if (!message) {
-    return res.status(400).json({ error: 'Message is required' });
-  }
-
+// Main API endpoint for processing messages
+app.post('/api/chat', async (req, res) => {
   try {
-    const response = await getCompletion(message); // Get OpenAI completion
-    res.status(200).json({ response }); // Send the OpenAI response back
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // Set headers for streaming response
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    const completion = await openai.chat.completions.create({
+      model: "meta/llama-3.1-405b-instruct",
+      messages: [{ "role": "user", "content": message }],
+      temperature: 0.2,
+      top_p: 0.7,
+      max_tokens: 1024,
+      stream: true
+    });
+
+    streamToResponse(completion, res);
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to process request' });
+    console.error('Error processing request:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 });
